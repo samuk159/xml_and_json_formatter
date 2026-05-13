@@ -122,6 +122,24 @@
       color: #cbd5e1;
     }
 
+    .history-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .history-copy-button {
+      background: #0f766e;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .history-copy-button:hover {
+      background: #0d9488;
+    }
+
     .history-type {
       font-weight: bold;
       text-transform: uppercase;
@@ -314,8 +332,29 @@
         const date = document.createElement('span');
         date.textContent = item.createdAt;
 
-        header.appendChild(type);
-        header.appendChild(date);
+        const left = document.createElement('div');
+        left.className = 'history-header-left';
+
+        left.appendChild(type);
+        left.appendChild(date);
+
+        const historyCopyButton = document.createElement('button');
+        historyCopyButton.className = 'history-copy-button';
+        historyCopyButton.textContent = 'Copiar';
+
+        historyCopyButton.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(item.content);
+            status.textContent =
+              'Histórico copiado para área de transferência';
+          } catch {
+            status.textContent =
+              'Falha ao copiar histórico';
+          }
+        });
+
+        header.appendChild(left);
+        header.appendChild(historyCopyButton);
 
         const pre = document.createElement('pre');
         pre.className = 'history-content';
