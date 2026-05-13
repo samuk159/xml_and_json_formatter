@@ -377,42 +377,182 @@
       });
     }
 
-    function processContent() {
-      const text = input.value;
-      const type = detectType(text);
+    function extractStructuredContents(text) {
+        const results = [];
 
-      if (!text.trim()) {
-        output.textContent = '';
-        status.textContent = 'Aguardando conteúdo...';
-        return;
+        let index = 0;
+
+        while (index < text.length) {
+          const current = text[index];
+
+          try {
+            if (current === '{' || current === '[') {
+              let stack = [];
+              let inString = false;
+              let escaped = false;
+              let start = index;
+
+              for (let i = index; i < text.length; i++) {
+                const char = text[i];
+
+                if (escaped) {
+                  escaped = false;
+                  continue;
+                }
+
+                if (char === '\\') {
+                  escaped = true;
+                  continue;
+                }
+
+                if (char === '"') {
+                  inString = !inString;
+                  continue;
+                }
+
+                if (inString) {
+                  continue;
+                }
+
+                if (char === '{' || char === '[') {
+                  stack.push(char);
+                }
+
+                if (char === '}' || char === ']') {
+                  stack.pop();
+
+                  if (stack.length === 0) {
+                    const possibleJson =
+                      text.substring(start, i + 1);
+
+                    try {
+                      JSON.parse(possibleJson);
+
+                      results.push({
+                        type: 'json',
+                        content: possibleJson
+                      });
+
+                      index = i;
+                      break;
+                    } catch {
+                    }
+                  }
+                }
+              }
+            }
+
+            if (current === '<') {
+              const remaining = text.substring(index);
+
+              const match = remaining.match(
+                /^<([a-zA-Z0-9:_-]+)([\s\S]*?)>([\s\S]*?)<\/\1>/
+              );
+
+              if (match) {
+                const possibleXml = match[0];
+
+                try {
+                  const parser = new DOMParser();
+
+                  const xmlDoc = parser.parseFromString(
+                    possibleXml,
+                    'application/xml'
+                  );
+
+                  const parserError =
+                    xmlDoc.getElementsByTagName('parsererror');
+
+                  if (parserError.length === 0) {
+                    results.push({
+                      type: 'xml',
+                      content: possibleXml
+                    });
+
+                    index += possibleXml.length - 1;
+                  }
+                } catch {
+                }
+              }
+            }
+          } catch {
+          }
+
+          index++;
+        }
+
+        return results;
       }
 
-      try {
-        let formatted = '';
+      function processContent() {
+        const text = input.value;
 
-        if (type === 'json') {
-          formatted = formatJson(text);
-          renderHighlighted(formatted, 'json');
-          addToHistory('json', formatted);
-          status.textContent = 'JSON formatado com sucesso';
+        if (!text.trim()) {
+          output.textContent = '';
+          status.textContent = 'Aguardando conteúdo...';
           return;
         }
 
-        if (type === 'xml') {
-          formatted = formatXml(text);
-          renderHighlighted(formatted, 'xml');
-          addToHistory('xml', formatted);
-          status.textContent = 'XML formatado com sucesso';
-          return;
-        }
+        try {
+          const extracted =
+            extractStructuredContents(text);
 
-        throw new Error('Formato não reconhecido');
-      } catch (error) {
-        output.className = 'hljs';
-        output.textContent = error.message;
-        status.textContent = 'Erro ao processar conteúdo';
+          if (extracted.length === 0) {
+            throw new Error(
+              'Nenhum JSON/XML válido encontrado'
+            );
+          }
+
+          const first = extracted[0];
+
+          let formatted = '';
+
+          if (first.type === 'json') {
+            formatted = formatJson(first.content);
+
+            renderHighlighted(formatted, 'json');
+
+            status.textContent =
+              `${extracted.length} JSON/XML encontrado(s)`;
+          }
+
+          if (first.type === 'xml') {
+            formatted = formatXml(first.content);
+
+            renderHighlighted(formatted, 'xml');
+
+            status.textContent =
+              `${extracted.length} JSON/XML encontrado(s)`;
+          }
+
+          extracted.forEach((item) => {
+            try {
+              let formattedContent = item.content;
+
+              if (item.type === 'json') {
+                formattedContent =
+                  formatJson(item.content);
+              }
+
+              if (item.type === 'xml') {
+                formattedContent =
+                  formatXml(item.content);
+              }
+
+              addToHistory(
+                item.type,
+                formattedContent
+              );
+            } catch {
+            }
+          });
+        } catch (error) {
+          output.className = 'hljs';
+          output.textContent = error.message;
+          status.textContent =
+            'Erro ao processar conteúdo';
+        }
       }
-    }
 
     input.addEventListener('paste', () => {
       setTimeout(processContent, 50);
