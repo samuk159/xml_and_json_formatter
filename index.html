@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Formatador JSON/XML</title>
+
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/xml.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .description {
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: #020617;
+      color: #f8fafc;
+      padding: 16px;
+      font-family: Consolas, monospace;
+      font-size: 14px;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: #3b82f6;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    .status {
+      color: #94a3b8;
+      font-size: 14px;
+    }
+
+    .history-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .history-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #f8fafc;
+    }
+
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      padding-bottom: 24px;
+    }
+
+    .history-item {
+      border: 1px solid #334155;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #111827;
+    }
+
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+
+    .history-type {
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .history-content {
+      margin: 0;
+      max-height: 300px;
+      overflow: auto;
+    }
+
+    .history-content code {
+      min-height: unset;
+    }
+
+    pre {
+      margin: 0;
+      flex: 1;
+      overflow: auto;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      background: #111827;
+    }
+
+    code {
+      font-family: Consolas, monospace;
+      font-size: 14px;
+      padding: 16px !important;
+      display: block;
+      min-height: 200px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>Formatador JSON/XML</h1>
+    <div class="description">
+      Cole um JSON ou XML no campo abaixo. O conteúdo será identificado e formatado automaticamente.
+    </div>
+  </div>
+
+  <textarea id="input"
+            placeholder="Cole aqui um JSON ou XML..."></textarea>
+
+  <div class="toolbar">
+    <button id="formatButton">Formatar</button>
+    <button id="copyButton">Copiar Resultado</button>
+    <span class="status" id="status">Aguardando conteúdo...</span>
+  </div>
+
+  <pre>
+    <code id="output" class="hljs"></code>
+  </pre>
+
+  <div class="history-container">
+    <div class="history-title">Histórico</div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <script>
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    const formatButton = document.getElementById('formatButton');
+    const copyButton = document.getElementById('copyButton');
+    const historyList = document.getElementById('historyList');
+
+    const HISTORY_KEY = 'json_xml_formatter_history';
+    const HISTORY_LIMIT = 50;
+
+    function formatJson(text) {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    }
+
+    function formatXml(xml) {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xml, 'application/xml');
+
+      const parserError = xmlDoc.getElementsByTagName('parsererror');
+      if (parserError.length > 0) {
+        throw new Error('XML inválido');
+      }
+
+      const serializer = new XMLSerializer();
+      let formatted = serializer.serializeToString(xmlDoc);
+
+      formatted = formatted.replace(/(>)(<)(\/?)/g, '$1\n$2$3');
+
+      let pad = 0;
+      const indent = '  ';
+
+      formatted = formatted
+        .split('\n')
+        .map((line) => {
+          line = line.trim();
+
+          if (line.match(/^<\/[^>]+>/)) {
+            pad -= 1;
+          }
+
+          const currentIndent = indent.repeat(Math.max(pad, 0));
+
+          if (
+            line.match(/^<[^!?][^>]*[^/]>/) &&
+            !line.includes('</')
+          ) {
+            pad += 1;
+          }
+
+          return currentIndent + line;
+        })
+        .join('\n');
+
+      return formatted;
+    }
+
+    function detectType(text) {
+      const trimmed = text.trim();
+
+      if (!trimmed) {
+        return null;
+      }
+
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        return 'json';
+      }
+
+      if (trimmed.startsWith('<')) {
+        return 'xml';
+      }
+
+      return null;
+    }
+
+    function renderHighlighted(content, language) {
+      const result = hljs.highlight(content, {
+        language
+      });
+
+      output.className = `hljs language-${language}`;
+      output.innerHTML = result.value;
+    }
+
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveHistory(history) {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function addToHistory(type, content) {
+      const history = getHistory();
+
+      history.unshift({
+        id: Date.now(),
+        type,
+        content,
+        createdAt: new Date().toLocaleString('pt-BR')
+      });
+
+      if (history.length > HISTORY_LIMIT) {
+        history.pop();
+      }
+
+      saveHistory(history);
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const history = getHistory();
+
+      historyList.innerHTML = '';
+
+      history.forEach((item) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'history-item';
+
+        const header = document.createElement('div');
+        header.className = 'history-header';
+
+        const type = document.createElement('span');
+        type.className = 'history-type';
+        type.textContent = item.type;
+
+        const date = document.createElement('span');
+        date.textContent = item.createdAt;
+
+        header.appendChild(type);
+        header.appendChild(date);
+
+        const pre = document.createElement('pre');
+        pre.className = 'history-content';
+
+        const code = document.createElement('code');
+        code.className = `hljs language-${item.type}`;
+
+        const result = hljs.highlight(item.content, {
+          language: item.type
+        });
+
+        code.innerHTML = result.value;
+
+        pre.appendChild(code);
+
+        wrapper.appendChild(header);
+        wrapper.appendChild(pre);
+
+        historyList.appendChild(wrapper);
+      });
+    }
+
+    function processContent() {
+      const text = input.value;
+      const type = detectType(text);
+
+      if (!text.trim()) {
+        output.textContent = '';
+        status.textContent = 'Aguardando conteúdo...';
+        return;
+      }
+
+      try {
+        let formatted = '';
+
+        if (type === 'json') {
+          formatted = formatJson(text);
+          renderHighlighted(formatted, 'json');
+          addToHistory('json', formatted);
+          status.textContent = 'JSON formatado com sucesso';
+          return;
+        }
+
+        if (type === 'xml') {
+          formatted = formatXml(text);
+          renderHighlighted(formatted, 'xml');
+          addToHistory('xml', formatted);
+          status.textContent = 'XML formatado com sucesso';
+          return;
+        }
+
+        throw new Error('Formato não reconhecido');
+      } catch (error) {
+        output.className = 'hljs';
+        output.textContent = error.message;
+        status.textContent = 'Erro ao processar conteúdo';
+      }
+    }
+
+    input.addEventListener('paste', () => {
+      setTimeout(processContent, 50);
+    });
+
+    input.addEventListener('input', () => {
+      if (!input.value.trim()) {
+        output.textContent = '';
+        status.textContent = 'Aguardando conteúdo...';
+      }
+    });
+
+    formatButton.addEventListener('click', processContent);
+
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(output.textContent);
+        status.textContent = 'Resultado copiado para área de transferência';
+      } catch {
+        status.textContent = 'Falha ao copiar';
+      }
+    });
+
+    renderHistory();
+  </script>
+</body>
+</html>
